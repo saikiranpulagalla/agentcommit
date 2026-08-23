@@ -27,3 +27,13 @@ certify-v31:
 	PYTHONPATH=src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python evals/certify_v31.py --stage security
 	PYTHONPATH=src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python evals/certify_v31.py --stage testmode
 	PYTHONPATH=src PYTEST_DISABLE_PLUGIN_AUTOLOAD=1 python evals/certify_v31.py --aggregate
+
+certify-v4:
+	PYTHONPATH=src python evals/certify_v4.py --stage coverage
+	@for i in 1 2 3 4 5; do PYTHONPATH=src python evals/certify_v4.py --stage stability --run-id $$i || exit $$?; done
+	PYTHONPATH=src python evals/certify_v4.py --stage differential
+	PYTHONPATH=src python evals/certify_v4.py --stage races
+	PYTHONPATH=src python evals/certify_v4.py --stage performance
+	PYTHONPATH=src python evals/certify_v4.py --stage security
+	PYTHONPATH=src python evals/certify_v4.py --stage testmode
+	PYTHONPATH=src python evals/certify_v4.py --aggregate

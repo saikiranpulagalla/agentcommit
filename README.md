@@ -31,3 +31,7 @@ The offline release gate requires >=95% source line coverage, >=90% source branc
 Full Razorpay certification remains separate and requires real **Test Mode Standard Checkout + signed webhook + API reconciliation** evidence. Offline fakes are not represented as live Razorpay evidence.
 
 See `docs/v3_1_architecture.md` and `docs/v3_1_test_mode_checklist.md`.
+
+## V4.0 intent-safety slice
+
+V4 adds a typed `IntentSpec`, immutable structured `ProductFacts`, deterministic hard-constraint enforcement at the exact commit boundary, tamper/staleness hashes, and an atomic bounded replan budget. The reference compiler is a deterministic fixture only; it is not presented as the final LLM.

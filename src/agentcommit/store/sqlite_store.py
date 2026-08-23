@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hashlib
+import json
 import sqlite3
 from pathlib import Path
 from typing import Callable
@@ -15,6 +17,7 @@ from agentcommit.domain.models import (
 from agentcommit.domain.policy import evaluate_commit
 from agentcommit.payments.razorpay import deterministic_receipt
 from agentcommit.payments.models import DispatchState, InventoryHoldState
+from agentcommit.ai.intent import IntentSpec, IntentStatus, ProductFacts, evaluate_hard_constraints
 
 
 class StoreError(RuntimeError):
@@ -219,6 +222,45 @@ CREATE TABLE IF NOT EXISTS webhook_inbox(
   received_at_ms INTEGER NOT NULL CHECK(received_at_ms > 0),
   processed_at_ms INTEGER NULL CHECK(processed_at_ms IS NULL OR processed_at_ms > 0)
 );
+CREATE TABLE IF NOT EXISTS intent_specs(
+  intent_id TEXT PRIMARY KEY,
+  buyer_id TEXT NOT NULL,
+  body_json TEXT NOT NULL,
+  body_hash TEXT NOT NULL,
+  version INTEGER NOT NULL CHECK(version > 0),
+  status TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS product_facts(
+  merchant_id TEXT NOT NULL,
+  sku TEXT NOT NULL,
+  attributes_json TEXT NOT NULL,
+  facts_hash TEXT NOT NULL,
+  revision INTEGER NOT NULL CHECK(revision > 0),
+  PRIMARY KEY(merchant_id, sku),
+  FOREIGN KEY(merchant_id, sku) REFERENCES products(merchant_id, sku)
+);
+CREATE TABLE IF NOT EXISTS delegation_intents(
+  delegation_id TEXT PRIMARY KEY,
+  intent_id TEXT NOT NULL,
+  expected_intent_version INTEGER NOT NULL CHECK(expected_intent_version > 0),
+  expected_intent_hash TEXT NOT NULL,
+  max_replans INTEGER NOT NULL CHECK(max_replans >= 0),
+  replans_used INTEGER NOT NULL CHECK(replans_used >= 0),
+  version INTEGER NOT NULL CHECK(version > 0),
+  FOREIGN KEY(delegation_id) REFERENCES delegations(delegation_id),
+  FOREIGN KEY(intent_id) REFERENCES intent_specs(intent_id)
+);
+CREATE TABLE IF NOT EXISTS grant_intent_bindings(
+  grant_id TEXT PRIMARY KEY,
+  intent_id TEXT NOT NULL,
+  expected_intent_version INTEGER NOT NULL CHECK(expected_intent_version > 0),
+  expected_intent_hash TEXT NOT NULL,
+  expected_product_facts_revision INTEGER NOT NULL CHECK(expected_product_facts_revision > 0),
+  expected_product_facts_hash TEXT NOT NULL,
+  expected_plan_generation INTEGER NOT NULL CHECK(expected_plan_generation >= 0),
+  FOREIGN KEY(grant_id) REFERENCES execution_grants(grant_id),
+  FOREIGN KEY(intent_id) REFERENCES intent_specs(intent_id)
+);
 CREATE TABLE IF NOT EXISTS audit_events(
   seq INTEGER PRIMARY KEY AUTOINCREMENT,
   event_type TEXT NOT NULL,
@@ -360,6 +402,221 @@ class MerchantStore:
         finally:
             con.close()
 
+    @staticmethod
+    def _sha256_text(text: str) -> str:
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    @staticmethod
+    def _bounded_nonnegative_int(name: str, value: int) -> int:
+        if isinstance(value, bool) or not isinstance(value, int) or not (0 <= value <= INT64_MAX):
+            raise DomainError(f"{name} must be a nonnegative int64")
+        return value
+
+    @staticmethod
+    def _intent_from_row(row: sqlite3.Row) -> tuple[IntentSpec, str]:
+        text = row["body_json"]
+        if not isinstance(text, str):
+            raise Conflict("corrupt persisted intent JSON")
+        digest = MerchantStore._sha256_text(text)
+        if digest != row["body_hash"]:
+            raise Conflict("corrupt persisted intent hash")
+        try:
+            intent = IntentSpec.from_canonical_json(text)
+        except Exception as exc:
+            raise Conflict("corrupt persisted intent") from exc
+        if (
+            intent.intent_id != row["intent_id"]
+            or intent.buyer_id != row["buyer_id"]
+            or intent.version != int(row["version"])
+            or intent.status.value != row["status"]
+        ):
+            raise Conflict("persisted intent columns disagree with body")
+        return intent, digest
+
+    @staticmethod
+    def _attributes_from_row(row: sqlite3.Row) -> tuple[dict[str, str | int | bool], str]:
+        text = row["attributes_json"]
+        if not isinstance(text, str):
+            raise Conflict("corrupt product facts JSON")
+        digest = MerchantStore._sha256_text(text)
+        if digest != row["facts_hash"]:
+            raise Conflict("corrupt product facts hash")
+        try:
+            raw = json.loads(text)
+        except json.JSONDecodeError as exc:
+            raise Conflict("corrupt product facts JSON") from exc
+        if not isinstance(raw, dict):
+            raise Conflict("product facts JSON must be object")
+        return raw, digest
+
+    def create_intent(self, intent: IntentSpec) -> None:
+        intent.__post_init__()
+        body = intent.canonical_json()
+        body_hash = self._sha256_text(body)
+        con = self._connect()
+        try:
+            con.execute(
+                "INSERT INTO intent_specs(intent_id,buyer_id,body_json,body_hash,version,status) VALUES(?,?,?,?,?,?)",
+                (intent.intent_id, intent.buyer_id, body, body_hash, intent.version, intent.status.value),
+            )
+        finally:
+            con.close()
+
+    def put_product_facts(self, *, merchant_id: str, sku: str,
+                          attributes: dict[str, str | int | bool]) -> ProductFacts:
+        con = self._connect()
+        try:
+            self._begin(con)
+            p = con.execute("SELECT * FROM products WHERE merchant_id=? AND sku=?", (merchant_id, sku)).fetchone()
+            if p is None:
+                raise NotFound("product")
+            existing = con.execute(
+                "SELECT * FROM product_facts WHERE merchant_id=? AND sku=?", (merchant_id, sku)
+            ).fetchone()
+            revision = 1 if existing is None else int(existing["revision"]) + 1
+            if revision > INT64_MAX:
+                raise Conflict("product facts revision exhausted")
+            facts = ProductFacts(
+                merchant_id=merchant_id, sku=sku, category=p["category"], currency=p["currency"],
+                price_paise=int(p["price_paise"]), quantity=1, revision=revision, attributes=attributes,
+            )
+            body = facts.canonical_attributes_json()
+            digest = self._sha256_text(body)
+            if existing is None:
+                con.execute(
+                    "INSERT INTO product_facts(merchant_id,sku,attributes_json,facts_hash,revision) VALUES(?,?,?,?,?)",
+                    (merchant_id, sku, body, digest, revision),
+                )
+            else:
+                if con.execute(
+                    "UPDATE product_facts SET attributes_json=?,facts_hash=?,revision=? WHERE merchant_id=? AND sku=? AND revision=?",
+                    (body, digest, revision, merchant_id, sku, existing["revision"]),
+                ).rowcount != 1:
+                    raise Conflict("product facts CAS lost")
+            con.commit()
+            return facts
+        except Exception:
+            if con.in_transaction:
+                con.rollback()
+            raise
+        finally:
+            con.close()
+
+    def attach_intent_to_delegation(self, *, delegation_id: str, intent_id: str,
+                                    max_replans: int, now_ms: int) -> None:
+        self._valid_now(now_ms)
+        self._bounded_nonnegative_int("max_replans", max_replans)
+        con = self._connect()
+        try:
+            self._begin(con)
+            d = con.execute("SELECT * FROM delegations WHERE delegation_id=?", (delegation_id,)).fetchone()
+            i = con.execute("SELECT * FROM intent_specs WHERE intent_id=?", (intent_id,)).fetchone()
+            if d is None:
+                raise NotFound("delegation")
+            if i is None:
+                raise NotFound("intent")
+            dg = self._delegation_from_row(d)
+            intent, digest = self._intent_from_row(i)
+            if dg.status is not DelegationState.ACTIVE or now_ms >= dg.expires_at_ms:
+                raise Conflict("delegation inactive/expired")
+            if intent.status is not IntentStatus.READY:
+                raise Conflict("intent needs clarification")
+            if intent.buyer_id != dg.buyer_id:
+                raise Conflict("intent buyer mismatch")
+            if int(d["plan_generation"]) != 0:
+                raise Conflict("intent must be attached before planning")
+            if con.execute("SELECT 1 FROM execution_grants WHERE delegation_id=? LIMIT 1", (delegation_id,)).fetchone() is not None:
+                raise Conflict("intent must be attached before grant issuance")
+            con.execute(
+                "INSERT INTO delegation_intents(delegation_id,intent_id,expected_intent_version,expected_intent_hash,max_replans,replans_used,version) VALUES(?,?,?,?,?,?,1)",
+                (delegation_id, intent_id, intent.version, digest, max_replans, 0),
+            )
+            con.execute(
+                "INSERT INTO audit_events(event_type,object_id,created_at_ms) VALUES(?,?,?)",
+                ("INTENT_ATTACHED", delegation_id, now_ms),
+            )
+            con.commit()
+        except Exception:
+            if con.in_transaction:
+                con.rollback()
+            raise
+        finally:
+            con.close()
+
+    def _v4_context_locked(self, con: sqlite3.Connection, *, delegation_id: str, buyer_id: str,
+                           merchant_id: str, sku: str, category: str, currency: str,
+                           amount_paise: int, quantity: int) -> tuple[sqlite3.Row, IntentSpec, str, ProductFacts, str] | None:
+        di = con.execute("SELECT * FROM delegation_intents WHERE delegation_id=?", (delegation_id,)).fetchone()
+        if di is None:
+            return None
+        ir = con.execute("SELECT * FROM intent_specs WHERE intent_id=?", (di["intent_id"],)).fetchone()
+        if ir is None:
+            raise Conflict("intent binding references missing intent")
+        intent, intent_hash = self._intent_from_row(ir)
+        if int(di["expected_intent_version"]) != intent.version or di["expected_intent_hash"] != intent_hash:
+            raise Conflict("stale/corrupt intent binding")
+        if intent.status is not IntentStatus.READY:
+            raise Conflict("intent needs clarification")
+        if intent.buyer_id != buyer_id:
+            raise Conflict("intent buyer mismatch")
+        pf = con.execute("SELECT * FROM product_facts WHERE merchant_id=? AND sku=?", (merchant_id, sku)).fetchone()
+        if pf is None:
+            raise Conflict("PRODUCT_FACTS_MISSING")
+        attrs, facts_hash = self._attributes_from_row(pf)
+        try:
+            facts = ProductFacts(
+                merchant_id=merchant_id, sku=sku, category=category, currency=currency,
+                price_paise=amount_paise, quantity=quantity, revision=int(pf["revision"]), attributes=attrs,
+            )
+        except Exception as exc:
+            raise Conflict("corrupt product facts") from exc
+        result = evaluate_hard_constraints(intent, facts)
+        if not result.satisfied:
+            raise Conflict("HARD_CONSTRAINT_VIOLATION:" + ",".join(result.violations))
+        return di, intent, intent_hash, facts, facts_hash
+
+    def _insert_grant_intent_binding_locked(self, con: sqlite3.Connection, *, grant_id: str,
+                                            expected_plan_generation: int,
+                                            context: tuple[sqlite3.Row, IntentSpec, str, ProductFacts, str] | None) -> None:
+        if context is None:
+            return
+        _, intent, intent_hash, facts, facts_hash = context
+        con.execute(
+            "INSERT INTO grant_intent_bindings(grant_id,intent_id,expected_intent_version,expected_intent_hash,expected_product_facts_revision,expected_product_facts_hash,expected_plan_generation) VALUES(?,?,?,?,?,?,?)",
+            (grant_id, intent.intent_id, intent.version, intent_hash, facts.revision, facts_hash, expected_plan_generation),
+        )
+
+    def _validate_v4_commit_locked(self, con: sqlite3.Connection, snapshot: DomainSnapshot) -> None:
+        di = con.execute("SELECT * FROM delegation_intents WHERE delegation_id=?", (snapshot.delegation.delegation_id,)).fetchone()
+        gb = con.execute("SELECT * FROM grant_intent_bindings WHERE grant_id=?", (snapshot.grant.grant_id,)).fetchone()
+        if di is None and gb is None:
+            return
+        if di is None or gb is None:
+            raise Conflict("INTENT_BINDING_MISSING")
+        context = self._v4_context_locked(
+            con,
+            delegation_id=snapshot.delegation.delegation_id,
+            buyer_id=snapshot.delegation.buyer_id,
+            merchant_id=snapshot.reservation.merchant_id,
+            sku=snapshot.reservation.sku,
+            category=snapshot.reservation.category,
+            currency=snapshot.reservation.currency,
+            amount_paise=snapshot.reservation.amount_paise,
+            quantity=snapshot.reservation.quantity,
+        )
+        assert context is not None
+        _, intent, intent_hash, facts, facts_hash = context
+        if (
+            gb["intent_id"] != intent.intent_id
+            or int(gb["expected_intent_version"]) != intent.version
+            or gb["expected_intent_hash"] != intent_hash
+        ):
+            raise Conflict("STALE_INTENT")
+        if int(gb["expected_product_facts_revision"]) != facts.revision or gb["expected_product_facts_hash"] != facts_hash:
+            raise Conflict("STALE_PRODUCT_FACTS")
+        if int(gb["expected_plan_generation"]) != snapshot.grant.expected_plan_generation:
+            raise Conflict("STALE_PLAN_INTENT_BINDING")
+
     def reserve(self, *, reservation_id: str, quote_id: str, now_ms: int, ttl_ms: int) -> MerchantReservation:
         self._valid_now(now_ms)
         if isinstance(ttl_ms, bool) or not isinstance(ttl_ms, int) or ttl_ms <= 0:
@@ -483,6 +740,11 @@ class MerchantStore:
                 raise Conflict("delegation budget/quantity exceeded")
             if dg.mode is AuthorizationMode.EXACT and (r["sku"] != dg.exact_sku or int(r["amount_paise"]) != dg.exact_amount_paise):
                 raise Conflict("exact authority mismatch")
+            v4_context = self._v4_context_locked(
+                con, delegation_id=delegation_id, buyer_id=d["buyer_id"],
+                merchant_id=r["merchant_id"], sku=r["sku"], category=r["category"], currency=r["currency"],
+                amount_paise=int(r["amount_paise"]), quantity=int(r["quantity"]),
+            )
             if con.execute("SELECT 1 FROM execution_grants WHERE reservation_id=? LIMIT 1", (reservation_id,)).fetchone() is not None:
                 raise Conflict("reservation already has execution grant")
             con.execute("INSERT INTO executions(execution_id,buyer_id,state,version) VALUES(?,?,?,?)",
@@ -512,6 +774,9 @@ class MerchantStore:
                  g.reservation_id, g.expected_quote_id, g.expected_merchant_id, g.expected_category,
                  g.expected_sku, g.expected_amount_paise, g.expected_currency, g.expected_quantity,
                  g.expected_quote_revision, g.expected_reservation_revision, g.status.value, g.version, g.expected_plan_generation, execution_id),
+            )
+            self._insert_grant_intent_binding_locked(
+                con, grant_id=g.grant_id, expected_plan_generation=g.expected_plan_generation, context=v4_context
             )
             con.commit()
             return g
@@ -618,6 +883,26 @@ class MerchantStore:
                     raise Conflict("substitution not allowed")
 
             new_generation = int(d["plan_generation"]) + 1
+            v4_context = self._v4_context_locked(
+                con, delegation_id=delegation_id, buyer_id=d["buyer_id"],
+                merchant_id=q["merchant_id"], sku=q["sku"], category=q["category"], currency=q["currency"],
+                amount_paise=int(q["amount_paise"]), quantity=int(q["quantity"]),
+            )
+            v4_replan_needed = False
+            if v4_context is not None:
+                di, intent, _, _, _ = v4_context
+                if not intent.substitution_allowed:
+                    first_v4 = con.execute(
+                        "SELECT sku FROM plans WHERE delegation_id=? ORDER BY generation ASC LIMIT 1", (delegation_id,)
+                    ).fetchone()
+                    if first_v4 is not None and first_v4["sku"] != q["sku"]:
+                        raise Conflict("intent substitution not allowed")
+                if new_generation > 1:
+                    if int(di["replans_used"]) >= int(di["max_replans"]):
+                        raise Conflict("REPLAN_BUDGET_EXHAUSTED")
+                    if int(di["version"]) >= INT64_MAX:
+                        raise Conflict("replan budget counter exhausted")
+                    v4_replan_needed = True
             active = con.execute(
                 "SELECT p.*,g.state AS gstate,g.version AS gversion,r.state AS rstate,r.revision AS rrevision,r.quantity,r.merchant_id,r.sku AS rsku,r.expires_at_ms AS rexpires "
                 "FROM plans p JOIN execution_grants g ON g.grant_id=p.grant_id "
@@ -710,6 +995,16 @@ class MerchantStore:
                                 (old["quantity"],old["merchant_id"],old["sku"]))
             self._fault(fault_hook, "v2_after_old_superseded")
 
+            if v4_replan_needed:
+                di = v4_context[0]  # type: ignore[index]
+                if con.execute(
+                    "UPDATE delegation_intents SET replans_used=replans_used+1,version=version+1 "
+                    "WHERE delegation_id=? AND version=? AND replans_used=? AND replans_used<max_replans",
+                    (delegation_id, di["version"], di["replans_used"]),
+                ).rowcount != 1:
+                    raise Conflict("replan budget CAS lost")
+                self._fault(fault_hook, "v4_after_replan_budget")
+
             if con.execute(
                 "UPDATE delegations SET plan_generation=? WHERE delegation_id=? AND state=? AND version=? AND plan_generation=?",
                 (new_generation, delegation_id, DelegationState.ACTIVE.value, d["version"], d["plan_generation"]),
@@ -734,6 +1029,9 @@ class MerchantStore:
                  grant.expected_sku,grant.expected_amount_paise,grant.expected_currency,grant.expected_quantity,
                  grant.expected_quote_revision,grant.expected_reservation_revision,grant.status.value,grant.version,
                  grant.expected_plan_generation,execution_id),
+            )
+            self._insert_grant_intent_binding_locked(
+                con, grant_id=grant.grant_id, expected_plan_generation=new_generation, context=v4_context
             )
             con.execute(
                 "INSERT INTO plans(plan_id,delegation_id,generation,quote_id,reservation_id,grant_id,sku,amount_paise,state,prior_plan_id,created_at_ms) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
@@ -939,6 +1237,8 @@ class MerchantStore:
             decision = evaluate_commit(snapshot, now_ms=now_ms)
             if not decision.allowed:
                 raise Conflict(decision.code.value)
+            self._validate_v4_commit_locked(con, snapshot)
+            self._fault(fault_hook, "after_v4_intent")
             self._fault(fault_hook, "after_admission")
 
             d, g, rr, e = snapshot.delegation, snapshot.grant, snapshot.reservation, snapshot.execution
