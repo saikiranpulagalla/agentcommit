@@ -1,0 +1,13 @@
+__pycache__/
+.pytest_cache/
+.coverage
+coverage.json
+*.pyc
+*.db
+*.db-shm
+*.db-wal
+evals/results/*
+!evals/results/.gitkeep
+.coverage
+coverage.json
+evals/results/v3.1/
