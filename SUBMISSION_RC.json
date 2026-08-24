@@ -1,0 +1,19 @@
+{
+  "release": "V5_SUBMISSION_POLISH_RC",
+  "base_demo_release": "V5_DEMO_RC",
+  "code_semantics_changed": false,
+  "submission_changes": [
+    "reviewer-first root README",
+    "architecture overview",
+    "5-minute demo runbook and pitch",
+    "what-broke engineering narrative",
+    "evaluation/evidence guide",
+    "threat model",
+    "panel Q&A",
+    "submission checklist"
+  ],
+  "external_evidence": {
+    "real_llm_accuracy": "NOT_RUN",
+    "razorpay_test_mode": "NOT_RUN"
+  }
+}

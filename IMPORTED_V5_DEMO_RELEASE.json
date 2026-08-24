@@ -1,0 +1,6 @@
+{
+  "artifact": "agentcommit-v5-demo-rc.zip",
+  "sha256": "87a2c98baedb2015380634fcb61bfae756d74d1609f7b780b48e17b857c03535",
+  "import_reason": "V5 Submission RC is a reviewer/documentation-only delta over the preserved V5 Demo RC artifact.",
+  "semantic_kernel_changed": false
+}

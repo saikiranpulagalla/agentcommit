@@ -48,3 +48,15 @@ certify-v41:
 	PYTHONPATH=src python evals/certify_v41.py --stage security
 	PYTHONPATH=src python evals/certify_v41.py --stage testmode
 	PYTHONPATH=src python evals/certify_v41.py --aggregate
+
+.PHONY: demo demo-smoke submission-check
+
+demo:
+	PYTHONPATH=src uvicorn agentcommit.demo.app:app --host 127.0.0.1 --port 8000
+
+demo-smoke:
+	PYTHONPATH=src python -m pytest -q tests/test_demo_engine.py
+
+submission-check:
+	PYTHONPATH=src python -m pytest -q
+	python scripts/submission_check.py

@@ -1,73 +1,240 @@
-# AgentCommit V3.1
+# AgentCommit
 
-State-aware execution control for AI-initiated commerce.
+**State-aware commit control for AI-initiated commerce.**
 
-> The plan may be stale; the commit must not be.
+> **The plan may be stale. The commit must not be.**
 
-This repository was reconstructed from the preserved **V2 certified release artifact** (original V2 metadata: tag `v2-certified`, SHA `8ecedbb6c59335480e77fa011d7a415551fbb3d0`) because the original Git working tree did not persist across the execution environment. The reconstruction baseline is recorded as `v2-certified-reconstructed`; V3/V3.1 changes are forward-only deltas.
+AgentCommit sits between an AI buyer's plan and the financial side effect. The AI may interpret intent, search, rank, explain, and replan. It does **not** own buyer authority, merchant truth, payment truth, or permission to move money.
 
-## Current scope
+This repository is prepared for the **Razorpay AI Buildathon — AI Growth & Agentic Commerce** track. The current demo is deliberately labeled **OFFLINE DEMO — NOT REAL MONEY** whenever it uses the deterministic reference compiler and fake Razorpay-shaped gateway.
 
-- V0/V1/V2 deterministic authority, reservation, CAS and replan invariants.
-- Durable V3.1 commit-to-payment outbox in the **same SQLite transaction** as authority consumption.
-- Deterministic Razorpay receipt identity derived from execution identity.
-- Durable-before-network Order creation with `CREATE_UNKNOWN` rather than blind retry.
-- Receipt-based unknown-order recovery.
-- Standard Checkout server-order HMAC verification.
-- Raw-body webhook verification, duplicate/out-of-order tolerance and monotonic capture truth.
-- Separate physical inventory hold lifecycle (`HELD -> FULFILLED | RELEASED`).
-- Late capture after inventory release becomes `COMPENSATION_REQUIRED` without re-consuming stock.
+**Release note:** this V5 Submission RC changes reviewer documentation/workflow only; the executable safety/payment/demo kernel is inherited unchanged from the preserved V5 Demo RC. `SUBMISSION_RELEASE.json` records the imported artifact hash and current evidence.
 
-## Certification
+## 30-second version
 
-Run stages independently or use:
+A normal AI buyer can make a valid decision at 12:00:00 and execute an invalid one at 12:00:05 because price, inventory, authorization, product facts, or payment state changed in between.
 
-```bash
-make certify-v31
+AgentCommit adds an execution boundary:
+
+```text
+Human intent
+   ↓
+AI proposes a plan
+   ↓
+Buyer delegation + merchant reservation
+   ↓
+Execution grant bound to current versions/hashes
+   ↓
+AGENTCOMMIT
+  - authority still valid?
+  - plan generation current?
+  - structured product facts current?
+  - hard intent constraints still satisfied?
+  - reservation current?
+  - payment state permits a new side effect?
+   ↓
+Razorpay Order / Checkout boundary
+   ↓
+Webhook + API reconciliation
+   ↓
+Fulfil, replan, or compensate
 ```
 
-The offline release gate requires >=95% source line coverage, >=90% source branch coverage, 5/5 complete stability runs, 100k independent policy/spec cases with zero mismatches, focused concurrency/hardening tests, p95 local commit/dispatch latency <50 ms, zero source security findings, and exact Git SHA/source-hash provenance.
+The model can be wrong. The commit gate must still be correct.
 
-Full Razorpay certification remains separate and requires real **Test Mode Standard Checkout + signed webhook + API reconciliation** evidence. Offline fakes are not represented as live Razorpay evidence.
+## What is actually novel here?
 
-See `docs/v3_1_architecture.md` and `docs/v3_1_test_mode_checklist.md`.
+AgentCommit is **not** another fraud model, payment router, generic AI guardrail layer, or replacement payment system.
 
-## V4.0 intent-safety slice
+It focuses on one failure class:
 
-V4 adds a typed `IntentSpec`, immutable structured `ProductFacts`, deterministic hard-constraint enforcement at the exact commit boundary, tamper/staleness hashes, and an atomic bounded replan budget. The reference compiler is a deterministic fixture only; it is not presented as the final LLM.
+> **stale-plan execution** — an AI-generated action was valid when planned but is no longer valid when the financial side effect is about to occur.
 
-## V4.1 structured AI boundary
+The contribution is applying established systems techniques—version binding, one-shot authority, CAS/transactional admission, durable outbox, reconciliation, monotonic payment truth, and deterministic hard-constraint verification—to **probabilistic agent plans operating over changing commerce/payment state**.
 
-V4.1 adds a provider-agnostic structured model interface, separate constraint/clarification vocabularies, deterministic critical money/quantity cross-checks, bounded intent repair, bounded candidate replanning, prompt-injection-resistant catalog handling, and a 60-case held-out evaluation harness.
+## Demo in 60 seconds
 
-`evals/run_v41_offline.py` produces an **offline harness/reference-baseline report only**. It does not claim real-LLM accuracy; real provider metrics must record model/provider/version/date and the frozen dataset SHA-256.
-
-## V4.2 provider-ready RC
-
-V4.2 adds an OpenAI Responses API adapter using strict Structured Outputs and a live held-out evaluator over the frozen V4.1 dataset. This release is **provider-ready/offline certified only** when no `OPENAI_API_KEY` is available; real-model accuracy remains `NOT_RUN` until credentials are supplied and the frozen evaluator is executed unchanged.
-
-Run live evaluation:
+Install and run:
 
 ```bash
-PYTHONPATH=src python evals/run_v42_live.py
+python -m pip install -e '.[demo]'
+PYTHONPATH=src uvicorn agentcommit.demo.app:app --host 127.0.0.1 --port 8000
 ```
 
-Optional model override:
+Open <http://127.0.0.1:8000>.
 
-```bash
-AGENTCOMMIT_OPENAI_MODEL=gpt-5.6-terra PYTHONPATH=src python evals/run_v42_live.py
+Use the default buyer request:
+
+> Buy me the cheapest 27-inch 4K USB-C monitor under ₹40,000. You can choose another model if the first becomes unavailable.
+
+Then run these four scenarios:
+
+1. **Happy Path** — valid plan → state-aware commit → captured payment → fulfilled inventory.
+2. **Stale Product → Replan** — merchant facts change after planning → old commit denied → substitute gets a fresh plan/grant → success.
+3. **Crash / Unknown Order Recovery** — durable outbox survives the crash → stable receipt finds the existing remote Order → no duplicate POST.
+4. **Late Capture → Compensation** — inventory is released only after reconciliation; if money is later known captured, execution becomes `COMPENSATION_REQUIRED` instead of pretending fulfilment succeeded.
+
+See [`docs/DEMO_RUNBOOK.md`](docs/DEMO_RUNBOOK.md) for the rehearsed 5-minute flow.
+
+## Core invariants
+
+AgentCommit is designed around these non-negotiable properties:
+
+- A revoked/expired/consumed buyer authority cannot commit.
+- One one-shot delegation can produce at most one winning financial path.
+- Merchant/resource/amount/currency/product bindings cannot be substituted silently.
+- A stale plan generation, quote/reservation revision, intent version, or product-facts revision/hash cannot commit.
+- The model cannot attest that a product satisfies a hard constraint; current structured merchant facts are checked deterministically at commit.
+- `CAPTURED` payment truth is monotonic: later weaker events/API observations cannot erase known money movement.
+- Ambiguous remote order creation is **reconciled**, not blindly retried.
+- A committed execution cannot be stranded between authority consumption and payment dispatch: a durable outbox is written transactionally.
+- Physical inventory hold state is separate from payment state; a late capture after release leads to compensation rather than silent inventory corruption.
+- Terminal execution contexts are never resurrected. Recovery continues the same lineage or creates a new explicitly linked path.
+
+See [`docs/ARCHITECTURE_OVERVIEW.md`](docs/ARCHITECTURE_OVERVIEW.md) and [`docs/THREAT_MODEL.md`](docs/THREAT_MODEL.md).
+
+## AI boundary
+
+The AI layer is intentionally narrow:
+
+```text
+Model may:
+  interpret natural language
+  produce structured constraints/preferences
+  rank known SKU IDs
+  replan within bounded authority
+  explain its reasoning
+
+Model may NOT:
+  choose buyer identity
+  mint authority
+  change budget
+  fabricate merchant facts
+  certify hard constraints
+  create an ExecutionGrant
+  decide payment truth
+  bypass reconciliation
+  issue arbitrary code/SQL/tool actions
 ```
 
-## V5 Buildathon demo layer
+Hard structured constraints are rechecked against authoritative product facts inside the same commit transaction. Critical budget/quantity language also has a deterministic cross-check so model omission cannot silently remove an explicit monetary bound.
 
-The V5 demo is a thin FastAPI UI over the certified AgentCommit kernel. It never reimplements authority, commit, payment, or reconciliation decisions in the web layer.
+A frozen 60-case held-out intent dataset exists at `evals/v41/heldout_intents.jsonl`. The real-model evaluator is provider-ready, but **real LLM accuracy is currently `NOT_RUN` in the included evidence because provider credentials were not available when the RC was built.** No scripted score is substituted.
 
-Run locally:
+## Razorpay boundary
 
-```bash
-PYTHONPATH=src uvicorn agentcommit.demo.app:app --reload --port 8000
+The payment layer is built around current Razorpay-style integration semantics:
+
+- durable local order intent before the remote POST;
+- deterministic, execution-derived receipt identity;
+- ambiguous create outcome → `CREATE_UNKNOWN`, then receipt lookup/reconciliation;
+- Standard Checkout signature verification bound to the server-stored order identity;
+- raw-body webhook signature verification;
+- webhook event-ID deduplication and tampered-duplicate detection;
+- duplicate/out-of-order event tolerance;
+- API reconciliation for critical payment truth;
+- late `failed → captured` convergence without starting a stale second financial path.
+
+The included V5 demo uses a fake Razorpay-shaped gateway and is visibly labeled as such. **Real Razorpay Test Mode Checkout/webhook certification is separate and currently `NOT_RUN` in the bundled evidence.**
+
+## Evidence snapshot
+
+### V5 demo RC
+
+| Check | Result |
+|---|---:|
+| Tests collected | **413** |
+| Inherited + demo test shards | **4/4 PASS** |
+| Demo-focused tests | **17/17 PASS** |
+| Demo stability | **5/5 PASS** |
+| Demo-layer source coverage | **99%** |
+| Repeated demo scenarios | **40/40 PASS** |
+| Scenario failures | **0** |
+| Local Uvicorn smoke | **PASS** |
+| Security headers | **PASS** |
+| Dangerous runtime calls | **0** |
+| Secret findings | **0** |
+| Real LLM evaluation | **NOT_RUN** |
+| Razorpay Test Mode | **NOT_RUN** |
+
+### V4.2 provider-ready AI boundary
+
+| Check | Result |
+|---|---:|
+| Tests | **396/396 PASS** |
+| Stability | **5/5 PASS** |
+| Source line coverage | **97.54%** |
+| Source branch coverage | **92.01%** |
+| OpenAI provider adapter coverage | **98%** |
+| Frozen held-out cases | **60** |
+| Security/secret findings | **0** |
+| Real-model accuracy | **NOT_RUN** |
+
+Evidence files are included in the release root: `V5_DEMO_CERTIFICATION.json`, `V42_CERTIFICATION.json`, and `V42_LIVE_EVAL_STATUS.json`.
+
+## What broke during development?
+
+The strongest failure story is a real TOCTOU defect found during the build:
+
+```text
+v1 design:
+validate quote/product state
+      ↓
+queue work
+      ↓
+merchant state changes
+      ↓
+old worker executes anyway   ← bug
 ```
 
-Then open `http://127.0.0.1:8000`.
+The fix was not “check one more time earlier.” The execution authority became bound to the expected state and was admitted at the side-effect boundary using transactional/CAS semantics. The stale interleaving is now a permanent regression test.
 
-The page is intentionally labelled **OFFLINE DEMO — NOT REAL MONEY** whenever it uses the deterministic reference compiler and fake Razorpay-shaped gateway. Real LLM and Razorpay Test Mode results remain separate evidence gates.
+Other bugs found by adversarial review included payment uncertainty permitting a second path, negative/zero money acceptance, reusable delegation authority amplification, inventory leakage from losing plans, stale API observations downgrading captured payment truth, and crash gaps between commit and payment dispatch. See [`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md).
+
+## Why this fits Razorpay now
+
+Razorpay's public Agent Studio principles emphasize merchant-defined boundaries, verified merchant data, platform validation before execution, and explicit control for irreversible actions. AgentCommit is complementary: it asks whether an already-authorized AI-generated transaction is **still admissible when current state is re-read at execution time**.
+
+Razorpay also launched Vulcan as a payments foundation model focused on payment reliability, fraud/risk and checkout intelligence. AgentCommit does not compete with that layer; it governs whether an AI-originated commerce action should be allowed to reach the payment layer at all.
+
+Official context:
+
+- Razorpay AI Buildathon: https://razorpay.com/buildathon/
+- Agent Studio guardrails: https://razorpay.com/blog/?p=26508
+- Razorpay Vulcan: https://razorpay.com/blog/?p=27542
+
+## Repository map
+
+```text
+src/agentcommit/domain/       deterministic authority + state model
+src/agentcommit/store/        SQLite transaction/CAS + merchant/intent persistence
+src/agentcommit/payments/     order intent, signatures, webhooks, reconciliation
+src/agentcommit/ai/           intent compiler, structured model boundary, planner/evals
+src/agentcommit/demo/         thin FastAPI Buildathon UI only
+
+tests/                        unit, adversarial, process-race and regression suites
+evals/                        frozen held-out data + certification/evaluation harnesses
+docs/                         architecture, threat model, demo/panel runbooks
+```
+
+## Reviewer path — 2 minutes
+
+If you are reviewing this repo quickly:
+
+1. Read this README through **Core invariants**.
+2. Open [`docs/ARCHITECTURE_OVERVIEW.md`](docs/ARCHITECTURE_OVERVIEW.md).
+3. Run the **Stale Product → Replan** demo.
+4. Read [`docs/WHAT_BROKE.md`](docs/WHAT_BROKE.md).
+5. Inspect `src/agentcommit/store/sqlite_store.py` for transactional admission and `src/agentcommit/payments/service.py` for ambiguity/reconciliation.
+6. Inspect `src/agentcommit/ai/structured.py` + `src/agentcommit/ai/planner.py` for the model boundary.
+7. Check `V5_DEMO_CERTIFICATION.json` for demo evidence and `V42_LIVE_EVAL_STATUS.json` for evidence that is intentionally **not** claimed.
+
+## Evidence honesty / current limitations
+
+This repository intentionally distinguishes:
+
+**Proven in the included offline RC:** deterministic authority/commit semantics, persistent concurrency behavior, state reconciliation logic, provider boundary validation, offline AI harness, and the four demo failure scenarios.
+
+**Not proven by the included release:** real-model held-out accuracy and a complete real Razorpay Test Mode Standard Checkout + signed webhook flow. Both are explicit separate gates and remain labeled `NOT_RUN` rather than being simulated and reported as live evidence.
+
+That distinction is part of the project, not a disclaimer added at the end: **AgentCommit's thesis is that financial systems should know what they know, know what they do not know, and fail safely in between.**

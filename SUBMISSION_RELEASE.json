@@ -1,0 +1,33 @@
+{
+  "base_release": "V5_DEMO_RC",
+  "base_release_zip_sha256": "87a2c98baedb2015380634fcb61bfae756d74d1609f7b780b48e17b857c03535",
+  "external_evidence": {
+    "razorpay_test_mode": "NOT_RUN",
+    "real_llm_accuracy": "NOT_RUN"
+  },
+  "full_regression": "PASS",
+  "local_uvicorn_smoke": "PASS",
+  "provenance_note": "This file records the content commit. The exact tagged release commit and ZIP hash are recorded externally in V5_SUBMISSION_CERTIFICATION.json to avoid self-referential metadata.",
+  "release": "V5_SUBMISSION_RC",
+  "reviewer_docs": [
+    "README.md",
+    "PITCH_5_MIN.md",
+    "docs/ARCHITECTURE_OVERVIEW.md",
+    "docs/DEMO_RUNBOOK.md",
+    "docs/WHAT_BROKE.md",
+    "docs/EVALUATION.md",
+    "docs/THREAT_MODEL.md",
+    "docs/PANEL_QA.md",
+    "docs/SUBMISSION_CHECKLIST.md"
+  ],
+  "semantic_kernel_changed": false,
+  "stale_replan_smoke_final": {
+    "execution_state": "SUCCEEDED",
+    "inventory_hold_state": "FULFILLED",
+    "payment_state": "CAPTURED"
+  },
+  "submission_check": "PASS",
+  "submission_content_commit": "a52edea852aac7a849617dcd081082fefa9b87f2",
+  "submission_content_tracked_digest": "3fe30b314ea086adc2cf94adb2a7f7acf50c011e56ef552d1fb593fc3f59b935",
+  "tests_collected": 413
+}
