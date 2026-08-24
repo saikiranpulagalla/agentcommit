@@ -1,0 +1,7 @@
+{
+  "artifact": "agentcommit-v4.1-offline-ai-rc.zip",
+  "artifact_sha256": "dbbc0ea5dbfe7ce4ae2aa91e41bec1f9ced1cc1f6eafea4031e51bb13232c1e7",
+  "source_tag_from_artifact": "v4.1-offline-ai-rc",
+  "source_git_sha_from_artifact": "f216f11ec74b6db1d17b09ae77cc025e63a582b6",
+  "note": "V4.2 reconstructed from preserved V4.1 certified release artifact because original .git metadata was not preserved in the execution environment."
+}

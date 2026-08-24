@@ -1,0 +1,14 @@
+{
+  "dataset": {
+    "cases": 60,
+    "path": "evals/v41/heldout_intents.jsonl",
+    "sha256": "466c97b0c1eaf62e0ed95862f995224406397a0f703f9f01f9f361c1f8e00c64"
+  },
+  "evaluated_at_utc": "2026-08-24T12:49:05.198393+00:00",
+  "kind": "V4_2_REAL_MODEL_EVALUATION",
+  "model": "gpt-5.6-luna",
+  "provider": "openai",
+  "real_llm_accuracy": null,
+  "reason": "provider credentials unavailable",
+  "status": "NOT_RUN"
+}

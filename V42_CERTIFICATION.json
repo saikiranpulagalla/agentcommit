@@ -1,0 +1,20 @@
+{
+  "git_sha": "df208fc8986473a19bcc0e37ad28f23333a56698",
+  "heldout_dataset_sha256": "466c97b0c1eaf62e0ed95862f995224406397a0f703f9f01f9f361c1f8e00c64",
+  "live_model_status": "NOT_RUN",
+  "notes": [
+    "Real-model accuracy is NOT_RUN when provider credentials are unavailable; no scripted result is substituted."
+  ],
+  "offline_reference_harness_kind": "OFFLINE_HARNESS_AND_RULE_BASELINE_ONLY",
+  "promotion_kind": "PROVIDER_READY_OFFLINE_RC",
+  "promotion_pass": true,
+  "provider_boundary_tests": "PASS",
+  "real_llm_certified": false,
+  "security": "PASS",
+  "source_branch_coverage_pct": 92.01183431952663,
+  "source_line_coverage_pct": 97.53561802079322,
+  "stability_passes": 5,
+  "tests_collected": 396,
+  "tracked_source_sha256": "f13896176fb624fa1d93b3f4b9826e53adbac890a97c2a1371685d3c272790ee",
+  "version": "V4.2"
+}

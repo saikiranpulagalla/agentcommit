@@ -41,3 +41,19 @@ V4 adds a typed `IntentSpec`, immutable structured `ProductFacts`, deterministic
 V4.1 adds a provider-agnostic structured model interface, separate constraint/clarification vocabularies, deterministic critical money/quantity cross-checks, bounded intent repair, bounded candidate replanning, prompt-injection-resistant catalog handling, and a 60-case held-out evaluation harness.
 
 `evals/run_v41_offline.py` produces an **offline harness/reference-baseline report only**. It does not claim real-LLM accuracy; real provider metrics must record model/provider/version/date and the frozen dataset SHA-256.
+
+## V4.2 provider-ready RC
+
+V4.2 adds an OpenAI Responses API adapter using strict Structured Outputs and a live held-out evaluator over the frozen V4.1 dataset. This release is **provider-ready/offline certified only** when no `OPENAI_API_KEY` is available; real-model accuracy remains `NOT_RUN` until credentials are supplied and the frozen evaluator is executed unchanged.
+
+Run live evaluation:
+
+```bash
+PYTHONPATH=src python evals/run_v42_live.py
+```
+
+Optional model override:
+
+```bash
+AGENTCOMMIT_OPENAI_MODEL=gpt-5.6-terra PYTHONPATH=src python evals/run_v42_live.py
+```

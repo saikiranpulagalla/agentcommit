@@ -24,3 +24,10 @@ __all__ = [
     "evaluate_intent_compiler", "load_intent_gold_jsonl", "CriticalExpectation", "extract_critical_expectation",
     "validate_critical_extraction",
 ]
+from agentcommit.ai.openai_provider import (
+    OpenAIResponsesJsonModel,
+    OpenAIUsage,
+    UrllibHttpJsonTransport,
+    intent_output_schema,
+    planner_output_schema,
+)
