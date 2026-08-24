@@ -238,3 +238,9 @@ This repository intentionally distinguishes:
 **Not proven by the included release:** real-model held-out accuracy and a complete real Razorpay Test Mode Standard Checkout + signed webhook flow. Both are explicit separate gates and remain labeled `NOT_RUN` rather than being simulated and reported as live evidence.
 
 That distinction is part of the project, not a disclaimer added at the end: **AgentCommit's thesis is that financial systems should know what they know, know what they do not know, and fail safely in between.**
+
+## Submission pack
+
+- [`APPLICATION_FORM_ANSWERS.md`](APPLICATION_FORM_ANSWERS.md) — form-ready project answers and evidence wording.
+- [`VIDEO_REHEARSAL.md`](VIDEO_REHEARSAL.md) — timed camera/demo rehearsal.
+- [`FINAL_SUBMISSION_CHECKLIST.md`](FINAL_SUBMISSION_CHECKLIST.md) — final public-repo/video/application checks.
