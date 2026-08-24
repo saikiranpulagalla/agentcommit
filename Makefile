@@ -37,3 +37,14 @@ certify-v4:
 	PYTHONPATH=src python evals/certify_v4.py --stage security
 	PYTHONPATH=src python evals/certify_v4.py --stage testmode
 	PYTHONPATH=src python evals/certify_v4.py --aggregate
+
+certify-v41:
+	PYTHONPATH=src python evals/certify_v41.py --stage coverage
+	@for i in 1 2 3 4 5; do PYTHONPATH=src python evals/certify_v41.py --stage stability --run-id $$i; done
+	PYTHONPATH=src python evals/certify_v41.py --stage differential
+	PYTHONPATH=src python evals/certify_v41.py --stage races
+	PYTHONPATH=src python evals/certify_v41.py --stage performance
+	PYTHONPATH=src python evals/certify_v41.py --stage ai-offline
+	PYTHONPATH=src python evals/certify_v41.py --stage security
+	PYTHONPATH=src python evals/certify_v41.py --stage testmode
+	PYTHONPATH=src python evals/certify_v41.py --aggregate

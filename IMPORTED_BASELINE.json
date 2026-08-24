@@ -1,0 +1,5 @@
+{
+  "artifact": "agentcommit-v4-safety-rc.zip",
+  "artifact_sha256": "73e91f4db2e03f447c00ca76d52a7f51bb7dc33ead58339eeea123061524fc1b",
+  "note": "Reconstructed Git lineage from preserved V4 safety RC artifact; original Git metadata did not persist. Internal historical metadata in the artifact is retained only as legacy context and is not used as V4.1 provenance."
+}

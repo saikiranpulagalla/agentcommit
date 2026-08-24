@@ -1,0 +1,8 @@
+{
+  "tag": "v3.1-offline-rc",
+  "git_sha": "f39ee7b3d098dbc21954b131c4fd299bd3346d8c",
+  "tracked_hash": "276c282e840c62bca8f57008b999081c8829ae183b91ee24f084e9d7402510b3",
+  "offline_promotion": true,
+  "full_v31_certified": false,
+  "test_mode_status": "NOT_RUN"
+}

@@ -11,3 +11,9 @@ evals/results/*
 .coverage
 coverage.json
 evals/results/v3.1/
+.coverage
+coverage.json
+.pytest_cache/
+__pycache__/
+*.pyc
+evals/results/

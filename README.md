@@ -35,3 +35,9 @@ See `docs/v3_1_architecture.md` and `docs/v3_1_test_mode_checklist.md`.
 ## V4.0 intent-safety slice
 
 V4 adds a typed `IntentSpec`, immutable structured `ProductFacts`, deterministic hard-constraint enforcement at the exact commit boundary, tamper/staleness hashes, and an atomic bounded replan budget. The reference compiler is a deterministic fixture only; it is not presented as the final LLM.
+
+## V4.1 structured AI boundary
+
+V4.1 adds a provider-agnostic structured model interface, separate constraint/clarification vocabularies, deterministic critical money/quantity cross-checks, bounded intent repair, bounded candidate replanning, prompt-injection-resistant catalog handling, and a 60-case held-out evaluation harness.
+
+`evals/run_v41_offline.py` produces an **offline harness/reference-baseline report only**. It does not claim real-LLM accuracy; real provider metrics must record model/provider/version/date and the frozen dataset SHA-256.
