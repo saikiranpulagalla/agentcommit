@@ -1,0 +1,29 @@
+{
+  "demo_focused_tests": 17,
+  "demo_p95_ms": 288.698,
+  "demo_scenario_failures": 0,
+  "demo_scenario_rounds": 10,
+  "demo_scenario_runs": 40,
+  "demo_source_line_coverage_pct": 99,
+  "demo_stability": "5/5 PASS",
+  "demo_stability_runs": 5,
+  "evidence_mode": "OFFLINE_REFERENCE+FAKE_RAZORPAY",
+  "forbidden_runtime_calls": [],
+  "git_sha": "4b7ba7e9c91d7bf0d653c2f1156b4b0e9223d1e1",
+  "imported_v42_zip_sha256": "1b00bfe7601d134a0b8f060ee0b6ce5fc6f246a7e241bfdf195b3632d415fda8",
+  "inherited_plus_demo_test_shards": {
+    "shard_1": "PASS",
+    "shard_2": "PASS",
+    "shard_3": "PASS",
+    "shard_4": "PASS"
+  },
+  "local_uvicorn_smoke": "PASS",
+  "promotion": "PASS_DEMO_RC",
+  "razorpay_test_mode": "NOT_RUN",
+  "real_llm_accuracy": "NOT_RUN",
+  "release": "V5_DEMO_RC",
+  "secret_findings": [],
+  "security_headers": "PASS",
+  "tests_collected": 413,
+  "tracked_source_hash": "6a174e96e1d0a3a9504a970d5857f4af96727c776cea0985f3afde861953ec14"
+}

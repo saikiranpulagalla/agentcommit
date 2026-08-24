@@ -1,0 +1,5 @@
+{
+  "artifact": "agentcommit-v4.2-provider-ready-rc.zip",
+  "sha256": "1b00bfe7601d134a0b8f060ee0b6ce5fc6f246a7e241bfdf195b3632d415fda8",
+  "relationship": "immutable imported certified baseline for V5 demo layer"
+}

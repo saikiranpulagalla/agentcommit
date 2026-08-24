@@ -57,3 +57,17 @@ Optional model override:
 ```bash
 AGENTCOMMIT_OPENAI_MODEL=gpt-5.6-terra PYTHONPATH=src python evals/run_v42_live.py
 ```
+
+## V5 Buildathon demo layer
+
+The V5 demo is a thin FastAPI UI over the certified AgentCommit kernel. It never reimplements authority, commit, payment, or reconciliation decisions in the web layer.
+
+Run locally:
+
+```bash
+PYTHONPATH=src uvicorn agentcommit.demo.app:app --reload --port 8000
+```
+
+Then open `http://127.0.0.1:8000`.
+
+The page is intentionally labelled **OFFLINE DEMO — NOT REAL MONEY** whenever it uses the deterministic reference compiler and fake Razorpay-shaped gateway. Real LLM and Razorpay Test Mode results remain separate evidence gates.
