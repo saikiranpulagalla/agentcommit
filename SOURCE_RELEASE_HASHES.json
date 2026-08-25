@@ -1,0 +1,37 @@
+[
+  {
+    "file": "agentcommit-v3.1-offline-rc.zip",
+    "size": 82672,
+    "sha256": "30ad0de5080abdf735fe42bcf06dd13901707d8213587bf79893cd387eb1b46a"
+  },
+  {
+    "file": "agentcommit-v4-safety-rc.zip",
+    "size": 113663,
+    "sha256": "73e91f4db2e03f447c00ca76d52a7f51bb7dc33ead58339eeea123061524fc1b"
+  },
+  {
+    "file": "agentcommit-v4.1-offline-ai-rc.zip",
+    "size": 149173,
+    "sha256": "dbbc0ea5dbfe7ce4ae2aa91e41bec1f9ced1cc1f6eafea4031e51bb13232c1e7"
+  },
+  {
+    "file": "agentcommit-v4.2-provider-ready-rc.zip",
+    "size": 153774,
+    "sha256": "1b00bfe7601d134a0b8f060ee0b6ce5fc6f246a7e241bfdf195b3632d415fda8"
+  },
+  {
+    "file": "agentcommit-v5-demo-rc.zip",
+    "size": 167545,
+    "sha256": "87a2c98baedb2015380634fcb61bfae756d74d1609f7b780b48e17b857c03535"
+  },
+  {
+    "file": "agentcommit-v5-submission-rc.zip",
+    "size": 187988,
+    "sha256": "34bf5e59f1b1af38e4663bcd73b4b4c90ffe6ab0368c987c0cda11c3d3a648c4"
+  },
+  {
+    "file": "agentcommit-final-submission-pack.zip",
+    "size": 194002,
+    "sha256": "edc6034ed1255589cd01022de7c1fd30191333b19c8a9b5025d32b04006d3fe3"
+  }
+]
