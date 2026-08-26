@@ -48,18 +48,15 @@ class PaymentService:
         return results
 
     def recover_unknown_orders(self, *, now_ms: int, limit: int = 100) -> int:
-        recovered=0
-        for intent in self.store.unresolved_dispatches(limit):
-            if intent.state is OrderIntentState.CREATING:
-                self.store.mark_create_unknown(intent.local_order_id,now_ms=now_ms)
-                intent=self.store.intent(intent.local_order_id)
-            matches=self.gateway.orders_by_receipt(receipt=intent.receipt)
-            exact=[o for o in matches if o.receipt==intent.receipt and o.amount_paise==intent.amount_paise and o.currency==intent.currency]
-            if len(exact)>1:
-                raise PaymentConflict("multiple remote orders found for one deterministic receipt")
-            if len(exact)==1:
-                self.store.bind_remote_order(intent.local_order_id,exact[0],now_ms=now_ms); recovered+=1
-        return recovered
+        """Recover receipt-visible Orders and safely stop expired invisible creates.
+
+        This is the established recovery entry point.  It also advances an expired,
+        still-unbound create to manual review, so an operator/scheduler that already
+        invokes recovery cannot leave authority and inventory stranded indefinitely.
+        The return value remains the number of remote Orders successfully recovered.
+        """
+        outcomes = self.resolve_expired_unknown_orders(now_ms=now_ms, limit=limit)
+        return sum(outcome == "RECOVERED" for outcome in outcomes)
 
     def resolve_expired_unknown_orders(self, *, now_ms: int, limit: int = 100) -> list[str]:
         """Perform one final receipt lookup, then stop automatic progress safely.

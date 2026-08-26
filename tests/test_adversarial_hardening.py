@@ -94,7 +94,7 @@ def test_expired_unknown_create_becomes_explicit_manual_review_without_releasing
     intent = PaymentStore(db).intent_for_execution(path["execution"])
     assert intent is not None
 
-    assert service.resolve_expired_unknown_orders(now_ms=NOW + 52) == ["MANUAL_REVIEW"]
+    assert service.recover_unknown_orders(now_ms=NOW + 52) == 0
     intent = PaymentStore(db).intent(intent.local_order_id)
     payment_store = PaymentStore(db)
     assert intent.state is OrderIntentState.CREATE_REQUIRES_MANUAL_REVIEW
