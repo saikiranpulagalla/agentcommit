@@ -61,6 +61,39 @@ class PaymentService:
                 self.store.bind_remote_order(intent.local_order_id,exact[0],now_ms=now_ms); recovered+=1
         return recovered
 
+    def resolve_expired_unknown_orders(self, *, now_ms: int, limit: int = 100) -> list[str]:
+        """Perform one final receipt lookup, then stop automatic progress safely.
+
+        An ambiguous remote write cannot be assumed absent merely because a lookup is
+        empty.  Once the checkout hold expires, move it to an explicit manual-review
+        state while retaining inventory and authority.  A later discovered remote order
+        can still bind by its deterministic receipt.
+        """
+        results: list[str] = []
+        for intent in self.store.unresolved_dispatches(limit):
+            if intent.state is OrderIntentState.CREATING:
+                self.store.mark_create_unknown(intent.local_order_id, now_ms=now_ms)
+                intent = self.store.intent(intent.local_order_id)
+            matches = self.gateway.orders_by_receipt(receipt=intent.receipt)
+            exact = [
+                order for order in matches
+                if order.receipt == intent.receipt
+                and order.amount_paise == intent.amount_paise
+                and order.currency == intent.currency
+            ]
+            if len(exact) > 1:
+                raise PaymentConflict("multiple remote orders found for one deterministic receipt")
+            if len(exact) == 1:
+                self.store.bind_remote_order(intent.local_order_id, exact[0], now_ms=now_ms)
+                results.append("RECOVERED")
+                continue
+            if intent.state is OrderIntentState.CREATE_REQUIRES_MANUAL_REVIEW:
+                continue
+            if now_ms >= self.store.hold(intent.execution_id).hold_until_ms:
+                self.store.mark_create_requires_manual_review(intent.local_order_id, now_ms=now_ms)
+                results.append("MANUAL_REVIEW")
+        return results
+
     def reconcile(self, *, local_order_id: str, now_ms: int) -> PaymentState:
         before=self.store.intent(local_order_id)
         if before.remote_order_id is None:

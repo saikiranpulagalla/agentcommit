@@ -271,6 +271,10 @@ class ReferenceIntentCompiler(IntentCompiler):
     """Narrow deterministic compiler used as a reference fixture, not presented as the final LLM."""
 
     def compile(self, *, intent_id: str, buyer_id: str, raw_request: str) -> IntentSpec:
+        # Keep the deterministic reference fixture aligned with the structured-model
+        # boundary: an explicit monetary cap must always become a hard constraint.
+        from agentcommit.ai.critical import extract_critical_expectation
+
         text = raw_request.lower()
         hard: list[HardConstraint] = []
         soft: list[SoftPreference] = []
@@ -281,8 +285,9 @@ class ReferenceIntentCompiler(IntentCompiler):
             hard.append(HardConstraint("resolution", ConstraintOp.EQ, "4K"))
         if "usb-c" in text or "usb c" in text:
             hard.append(HardConstraint("usb_c", ConstraintOp.EQ, True))
-        if "40,000" in text or "40000" in text or "40k" in text:
-            hard.append(HardConstraint("price_paise", ConstraintOp.LTE, 4_000_000))
+        critical = extract_critical_expectation(raw_request)
+        if critical.max_price_paise is not None:
+            hard.append(HardConstraint("price_paise", ConstraintOp.LTE, critical.max_price_paise))
         if "cheapest" in text:
             soft.append(SoftPreference("price_paise", PreferenceDirection.MINIMIZE))
         substitution_allowed = any(phrase in text for phrase in ("another model", "substitute", "alternative"))

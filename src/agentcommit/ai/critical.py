@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from decimal import Decimal, InvalidOperation
 import re
 
 from agentcommit.ai.intent import ConstraintOp, IntentSpec
@@ -9,6 +10,19 @@ from agentcommit.domain.models import DomainError, INT64_MAX
 _BUDGET = re.compile(
     r"(?:under|below|less\s+than|up\s+to|max(?:imum)?(?:\s+of)?|within|budget(?:\s+of|\s+is|\s*=|\s*:)?|not\s+above|no\s+more\s+than)"
     r"\s*(?:₹|rs\.?|inr)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(k|thousand)?\b",
+    re.IGNORECASE,
+)
+_LEADING_CURRENCY_AT_MOST_BUDGET = re.compile(
+    r"\bat\s+most\s*(?:₹|rs\.?|inr)\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(k|thousand)?\b",
+    re.IGNORECASE,
+)
+_LEADING_SCALED_AT_MOST_BUDGET = re.compile(
+    r"\bat\s+most\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(k|thousand)\b",
+    re.IGNORECASE,
+)
+_TRAILING_BUDGET = re.compile(
+    r"(?:₹|rs\.?|inr)?\s*([0-9][0-9,]*(?:\.[0-9]+)?)\s*(k|thousand)?\s*"
+    r"(?:inr|rs\.?|rupees?)?\s*(?:at\s+most|or\s+(?:less|below|under)|max(?:imum)?)\b",
     re.IGNORECASE,
 )
 _QUANTITY = re.compile(
@@ -31,21 +45,26 @@ def extract_critical_expectation(raw_request: str) -> CriticalExpectation:
     if not isinstance(raw_request, str):
         raise DomainError("raw_request must be string")
     max_price: int | None = None
-    budget_match = _BUDGET.search(raw_request)
-    if budget_match:
+    budgets: list[int] = []
+    for budget_match in (*_BUDGET.finditer(raw_request), *_LEADING_CURRENCY_AT_MOST_BUDGET.finditer(raw_request), *_LEADING_SCALED_AT_MOST_BUDGET.finditer(raw_request), *_TRAILING_BUDGET.finditer(raw_request)):
         number = budget_match.group(1).replace(",", "")
         try:
-            rupees = float(number) if "." in number else int(number)
-        except ValueError as exc:
+            rupees = Decimal(number)
+        except InvalidOperation as exc:
             raise DomainError("invalid explicit budget") from exc
         if budget_match.group(2):
-            rupees *= 1000
-        paise_float = rupees * 100
-        if paise_float != int(paise_float):
+            rupees *= Decimal(1000)
+        paise = rupees * Decimal(100)
+        if paise != paise.to_integral_value():
             raise DomainError("budget cannot be represented exactly in paise")
-        max_price = int(paise_float)
-        if not 0 < max_price <= INT64_MAX:
+        value = int(paise)
+        if not 0 < value <= INT64_MAX:
             raise DomainError("explicit budget out of range")
+        budgets.append(value)
+    if budgets:
+        # Multiple explicit caps can appear in one request. Preserving the strictest one
+        # is conservative and prevents a later phrase from widening buyer authority.
+        max_price = min(budgets)
 
     quantity: int | None = None
     quantity_match = _QUANTITY.search(raw_request)

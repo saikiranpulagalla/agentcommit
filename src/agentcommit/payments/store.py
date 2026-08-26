@@ -168,8 +168,9 @@ class PaymentStore:
         try:
             rows = con.execute(
                 "SELECT i.* FROM payment_order_intents i JOIN payment_dispatch_outbox d ON d.execution_id=i.execution_id "
-                "WHERE d.state=? AND i.state IN (?,?) ORDER BY i.created_at_ms LIMIT ?",
-                (DispatchState.DISPATCHING.value, OrderIntentState.CREATING.value, OrderIntentState.CREATE_UNKNOWN.value, limit),
+                "WHERE (d.state=? AND i.state IN (?,?)) OR i.state=? ORDER BY i.created_at_ms LIMIT ?",
+                (DispatchState.DISPATCHING.value, OrderIntentState.CREATING.value, OrderIntentState.CREATE_UNKNOWN.value,
+                 OrderIntentState.CREATE_REQUIRES_MANUAL_REVIEW.value, limit),
             ).fetchall()
             return [self._intent(r) for r in rows]
         finally:
@@ -282,7 +283,7 @@ class PaymentStore:
             i = con.execute("SELECT * FROM payment_order_intents WHERE local_order_id=?", (local_order_id,)).fetchone()
             if i is None:
                 raise PaymentNotFound("order intent")
-            if i["state"] not in (OrderIntentState.CREATING.value, OrderIntentState.CREATE_UNKNOWN.value):
+            if i["state"] not in (OrderIntentState.CREATING.value, OrderIntentState.CREATE_UNKNOWN.value, OrderIntentState.CREATE_REQUIRES_MANUAL_REVIEW.value):
                 if i["remote_order_id"] == remote.order_id and i["state"] in (OrderIntentState.CREATED.value, OrderIntentState.PAID.value):
                     con.commit(); return self._intent(i)
                 raise PaymentConflict("order intent cannot bind remote order")
@@ -339,6 +340,57 @@ class PaymentStore:
             if con.in_transaction: con.rollback()
             raise
         finally: con.close()
+
+    def mark_create_requires_manual_review(self, local_order_id: str, *, now_ms: int) -> None:
+        """Stop automatic retries after an expired unknown remote create.
+
+        This deliberately does not release inventory or restore authority: an empty
+        lookup is not proof that a money-moving remote side effect never happened.
+        """
+        _valid_now(now_ms)
+        con = self._connect()
+        try:
+            self._begin(con)
+            i = con.execute("SELECT * FROM payment_order_intents WHERE local_order_id=?", (local_order_id,)).fetchone()
+            if i is None:
+                raise PaymentNotFound("order intent")
+            if i["state"] == OrderIntentState.CREATE_REQUIRES_MANUAL_REVIEW.value:
+                con.commit()
+                return
+            if i["state"] != OrderIntentState.CREATE_UNKNOWN.value or i["remote_order_id"] is not None:
+                raise PaymentConflict("create is not an unbound unknown")
+            d = con.execute("SELECT * FROM payment_dispatch_outbox WHERE execution_id=?", (i["execution_id"],)).fetchone()
+            h = con.execute("SELECT * FROM inventory_holds WHERE execution_id=?", (i["execution_id"],)).fetchone()
+            e = con.execute("SELECT * FROM executions WHERE execution_id=?", (i["execution_id"],)).fetchone()
+            if None in (d, h, e):
+                raise PaymentConflict("broken unknown-create graph")
+            if now_ms < int(h["hold_until_ms"]):
+                raise PaymentConflict("unknown create hold has not expired")
+            if h["state"] != InventoryHoldState.HELD.value:
+                raise PaymentConflict("unknown create inventory hold is not retained")
+            if max(int(i["version"]), int(d["version"]), int(e["version"])) >= INT64_MAX:
+                raise PaymentConflict("counter exhausted")
+            if con.execute(
+                "UPDATE payment_order_intents SET state=?,version=version+1,updated_at_ms=? "
+                "WHERE local_order_id=? AND state=? AND version=?",
+                (OrderIntentState.CREATE_REQUIRES_MANUAL_REVIEW.value, now_ms, local_order_id,
+                 OrderIntentState.CREATE_UNKNOWN.value, i["version"]),
+            ).rowcount != 1:
+                raise PaymentConflict("unknown create intent CAS lost")
+            if con.execute(
+                "UPDATE payment_dispatch_outbox SET state=?,version=version+1 WHERE execution_id=? AND version=?",
+                (DispatchState.CANCELLED.value, i["execution_id"], d["version"]),
+            ).rowcount != 1:
+                raise PaymentConflict("unknown create dispatch CAS lost")
+            if ExecutionState(e["state"]) is not ExecutionState.EXECUTION_UNKNOWN:
+                self._transition_execution_locked(con, e, ExecutionState.EXECUTION_UNKNOWN)
+            con.commit()
+        except Exception:
+            if con.in_transaction:
+                con.rollback()
+            raise
+        finally:
+            con.close()
 
     def mark_create_failed(self, local_order_id: str, *, now_ms: int) -> None:
         _valid_now(now_ms)
@@ -565,8 +617,12 @@ class PaymentStore:
                     if merged.value!=old["state"]:
                         if int(old["version"])>=INT64_MAX: raise PaymentConflict("payment version exhausted")
                         con.execute("UPDATE payment_attempts SET state=?,version=version+1 WHERE payment_id=?",(merged.value,p.payment_id))
-            # Existing CAPTURED evidence is included even if this API read is stale or empty.
+            # A bound remote Order marked paid is high-strength captured evidence.  The
+            # payment-list read may be temporarily incomplete, so never release stock
+            # merely because that secondary read is empty.
             aggregate=self._aggregate_payment_state_locked(con,local_order_id)
+            if remote_order.status == "paid":
+                aggregate=merge_payment_state(aggregate,PaymentState.CAPTURED)
             self._apply_aggregate_locked(con,i,aggregate,now_ms=now_ms)
             con.commit(); return aggregate
         except Exception:
