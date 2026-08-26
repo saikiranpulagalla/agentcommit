@@ -9,6 +9,7 @@ AgentCommit sits between an AI buyer's plan and the financial side effect. The A
 This repository is prepared for the **Razorpay AI Buildathon — AI Growth & Agentic Commerce** track. The current demo is deliberately labeled **OFFLINE DEMO — NOT REAL MONEY** whenever it uses the deterministic reference compiler and fake Razorpay-shaped gateway.
 
 **Release note:** this V5 Submission RC changes reviewer documentation/workflow only; the executable safety/payment/demo kernel is inherited unchanged from the preserved V5 Demo RC. `SUBMISSION_RELEASE.json` records the imported artifact hash and current evidence.
+> **Evidence scope:** the V5 certification and release JSON files are historical evidence for the original V5 RC. This successor hardening candidate is documented separately in [Hardening Candidate](docs/HARDENING_CANDIDATE.md); it does not relabel historical evidence or turn any `NOT_RUN` integration claim into a PASS claim.
 
 ## 30-second version
 
